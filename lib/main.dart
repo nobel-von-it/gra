@@ -352,38 +352,44 @@ class _MainScreenState extends State<MainScreen> {
   bool isGridView = false;
   String searchQuery = '';
   SortMode sortMode = SortMode.dateDesc;
+
+  bool isAscending = false;
+
+  Set<String> activeTypes = {};
+  Set<String> activeStatuses = {};
+
   final Box gamesBox = Hive.box(boxGames);
   final TextEditingController _searchController = TextEditingController();
 
   List<dynamic> _getSortedAndFiltered(List<dynamic> items) {
     var result = items.where((g) {
-      final title = (g['title'] ?? '').toString().toLowerCase();
-      return title.contains(searchQuery.toLowerCase());
+      // Безопасное получение данных из Map
+      final itemType = g['type']?.toString() ?? '';
+      final itemStatus = g['status']?.toString() ?? '';
+      final itemTitle = g['title']?.toString().toLowerCase() ?? '';
+
+      // 1. Поиск
+      final matchesSearch = itemTitle.contains(searchQuery.toLowerCase());
+
+      // 2. Фильтр по типу (если сет пустой — подходят все)
+      final matchesType = activeTypes.isEmpty || activeTypes.contains(itemType);
+
+      // 3. Фильтр по статусу (если сет пустой — подходят все)
+      final matchesStatus =
+          activeStatuses.isEmpty || activeStatuses.contains(itemStatus);
+
+      return matchesSearch && matchesType && matchesStatus;
     }).toList();
 
-    switch (sortMode) {
-      case SortMode.dateDesc:
-        result.sort(
-          (a, b) => (DateTime.tryParse(b['dateTime'] ?? '') ?? DateTime(0))
-              .compareTo(DateTime.tryParse(a['dateTime'] ?? '') ?? DateTime(0)),
-        );
-        break;
-      case SortMode.dateAsc:
-        result.sort(
-          (a, b) => (DateTime.tryParse(a['dateTime'] ?? '') ?? DateTime(0))
-              .compareTo(DateTime.tryParse(b['dateTime'] ?? '') ?? DateTime(0)),
-        );
-        break;
-      case SortMode.liked:
-        result = result.where((g) => g['status'] == 'Like').toList();
-        break;
-      case SortMode.disliked:
-        result = result.where((g) => g['status'] == 'Dislike').toList();
-        break;
-      case SortMode.neutral:
-        result = result.where((g) => g['status'] == 'Neutral').toList();
-        break;
-    }
+    // Сортировка по дате
+    result.sort((a, b) {
+      final da =
+          DateTime.tryParse(a['dateTime']?.toString() ?? '') ?? DateTime(0);
+      final db =
+          DateTime.tryParse(b['dateTime']?.toString() ?? '') ?? DateTime(0);
+      return isAscending ? da.compareTo(db) : db.compareTo(da);
+    });
+
     return result;
   }
 
@@ -430,6 +436,122 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          // Чтобы чипы обновлялись сразу внутри шторки
+          builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Сортировка по дате",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    children: [
+                      ChoiceChip(
+                        label: const Text("Сначала новые"),
+                        selected: !isAscending,
+                        onSelected: (val) {
+                          setState(() => isAscending = false);
+                          setModalState(() {});
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text("Сначала старые"),
+                        selected: isAscending,
+                        onSelected: (val) {
+                          setState(() => isAscending = true);
+                          setModalState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 30),
+                  const Text(
+                    "Типы контента",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    children: ReviewType.values.map((type) {
+                      return FilterChip(
+                        label: Text(type.label),
+                        selected: activeTypes.contains(type.value),
+                        onSelected: (selected) {
+                          setState(() {
+                            selected
+                                ? activeTypes.add(type.value)
+                                : activeTypes.remove(type.value);
+                          });
+                          setModalState(() {});
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const Divider(height: 30),
+                  const Text(
+                    "Оценка",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    children: ['Like', 'Neutral', 'Dislike'].map((status) {
+                      return FilterChip(
+                        label: Text(
+                          status == 'Like'
+                              ? 'Нравится'
+                              : status == 'Dislike'
+                              ? 'Нет'
+                              : 'Норм',
+                        ),
+                        selected: activeStatuses.contains(status),
+                        onSelected: (selected) {
+                          setState(() {
+                            selected
+                                ? activeStatuses.add(status)
+                                : activeStatuses.remove(status);
+                          });
+                          setModalState(() {});
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        activeTypes.clear();
+                        activeStatuses.clear();
+                        isAscending = false;
+                      });
+                      Navigator.pop(context);
+                    },
+                    child: const Text(
+                      "Сбросить всё",
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _confirmDelete(BuildContext context, int index, String title) {
     showDialog(
       context: context,
@@ -459,6 +581,15 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
         title: const Text('My Reviews'),
         actions: [
+          IconButton(
+            icon: Badge(
+              isLabelVisible:
+                  activeTypes.isNotEmpty || activeStatuses.isNotEmpty,
+              child: const Icon(Icons.filter_list),
+            ),
+            onPressed: _showFilterSheet,
+            tooltip: 'Фильтры и сортировка',
+          ),
           IconButton(
             icon: const Icon(Icons.book_rounded),
             onPressed: () => Navigator.push(
@@ -504,6 +635,14 @@ class _MainScreenState extends State<MainScreen> {
         builder: (context, Box box, _) {
           final items = _getSortedAndFiltered(box.values.toList());
           if (box.isEmpty) return const Center(child: Text('Пусто...'));
+          if (items.isEmpty) {
+            return const Center(
+              child: Text(
+                'По фильтрам ничего не подходит... Гет гут!',
+                style: TextStyle(fontSize: 24),
+              ),
+            );
+          }
           return isGridView
               ? _buildGrid(items, box.values.toList())
               : _buildList(items, box.values.toList());
