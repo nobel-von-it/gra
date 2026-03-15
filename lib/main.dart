@@ -888,6 +888,42 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
 
   void _save() => Hive.box(boxGames).putAt(widget.index, data);
 
+  void _addCustomCriterion() {
+    final TextEditingController nameController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Новый критерий'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Название...'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (nameController.text.trim().isNotEmpty) {
+                setState(() {
+                  data['criteria'].add({
+                    'name': nameController.text.trim(),
+                    'score': '',
+                  });
+                });
+                _save();
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Добавить'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1015,15 +1051,37 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           "Оценки",
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
+        const SizedBox(height: 8),
         ...List.generate(
           data['criteria'].length,
           (i) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            padding: const EdgeInsets.symmetric(vertical: 6.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(data['criteria'][i]['name']),
-                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        data['criteria'][i]['name'],
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close,
+                        size: 14,
+                        color: Colors.grey,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          data['criteria'].removeAt(i);
+                        });
+                        _save();
+                      },
+                    ),
+                  ],
+                ),
                 TextField(
                   controller:
                       TextEditingController(text: data['criteria'][i]['score'])
@@ -1032,14 +1090,14 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                         ),
                   maxLines: null,
                   minLines: 1,
-                  expands: false,
                   decoration: InputDecoration(
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 12,
-                      vertical: 8,
+                      vertical: 10,
                     ),
-                    border: const OutlineInputBorder(),
+                    border: OutlineInputBorder(),
+                    hintText: 'Ваша оценка...',
                   ),
                   onChanged: (v) {
                     data['criteria'][i]['score'] = v;
@@ -1049,20 +1107,13 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               ],
             ),
           ),
-          // (i) => ListTile(
-          //   title: Text(data['criteria'][i]['name']),
-          //   subtitle: TextField(
-          //     controller:
-          //         TextEditingController(text: data['criteria'][i]['score'])
-          //           ..selection = TextSelection.collapsed(
-          //             offset: data['criteria'][i]['score'].length,
-          //           ),
-          //     onChanged: (v) {
-          //       data['criteria'][i]['score'] = v;
-          //       _save();
-          //     },
-          //   ),
-          // ),
+        ),
+        Center(
+          child: TextButton.icon(
+            onPressed: _addCustomCriterion,
+            icon: const Icon(Icons.add),
+            label: const Text('Добавить критерий'),
+          ),
         ),
       ],
     );
