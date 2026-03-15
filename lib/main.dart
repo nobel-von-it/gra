@@ -810,12 +810,7 @@ class _AddReviewFormState extends State<AddReviewForm> {
                 'type': type,
                 'title': _titleController.text,
                 'genres': <String>[],
-                'playTime': '',
-                'readTime': '',
-                'episodes': '',
-                'chapters': '',
-                'url': '',
-                'length': '',
+                for (var type in ReviewType.values) type.dataKey: '',
                 'status': status,
                 'dateTime': DateTime.now().toString(),
                 'criteria': template
