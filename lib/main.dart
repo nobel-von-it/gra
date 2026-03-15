@@ -18,6 +18,7 @@ const String keyMangaTemplate = 'default_criteria_manga';
 const String keyFilmTemplate = 'default_criteria_film';
 const String keyMusicTemplate = 'default_criteria_music';
 const String keyVideoTemplate = 'default_criteria_video';
+const String keyBookTemplate = 'default_criteria_book';
 
 const List<String> allAvailableGenres = [
   'Action',
@@ -68,6 +69,16 @@ enum ReviewType {
     unit: 'гл.',
     unitString: 'Количество глав',
     unitIcon: Icons.numbers,
+  ),
+  book(
+    value: 'book',
+    label: 'Книга',
+    icon: Icons.book,
+    templateKey: keyBookTemplate,
+    dataKey: 'readTime',
+    unit: 'дн.',
+    unitString: 'Время прочтения',
+    unitIcon: Icons.repeat,
   ),
   movie(
     value: 'movie',
@@ -189,6 +200,9 @@ void main() async {
   }
   if (settings.get(keyVideoTemplate) == null) {
     settings.put(keyVideoTemplate, ['Смысл']);
+  }
+  if (settings.get(keyBookTemplate) == null) {
+    settings.put(keyBookTemplate, ['Смысл', 'Стиль']);
   }
 
   runApp(const GameReviewApp());
@@ -820,6 +834,7 @@ class _AddReviewFormState extends State<AddReviewForm> {
                 'title': _titleController.text,
                 'genres': <String>[],
                 'playTime': '',
+                'readTime': '',
                 'episodes': '',
                 'chapters': '',
                 'url': '',
