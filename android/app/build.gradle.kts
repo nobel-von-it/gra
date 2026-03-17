@@ -15,7 +15,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.gra"
+    namespace = "com.echoelysium.gra"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -38,7 +38,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.gra"
+        applicationId = "com.echoelysium.gra"
         
         minSdk = flutter.minSdkVersion 
         
@@ -51,8 +51,8 @@ android {
         release {
             signingConfig = signingConfigs.getByName("release")
             
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
