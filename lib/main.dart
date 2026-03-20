@@ -317,6 +317,31 @@ class BackupSettingsScreen extends StatelessWidget {
       body: ListView(
         children: [
           ListTile(
+            leading: const Icon(Icons.file_copy),
+            title: const Text('Путь к автоматическому бэкапу'),
+            subtitle: const Text('Выберите место для сохранения бэкапа'),
+            onTap: () {},
+          ),
+          ListTile(
+            leading: const Icon(Icons.repeat),
+            title: const Text('Время бэкапа'),
+            subtitle: const Text('Выберите время для автоматического бэкапа'),
+            onTap: () {},
+          ),
+          ListTile(
+            leading: const Icon(Icons.save),
+            title: const Text('Сделать бэкап'),
+            subtitle: const Text('Сохранить все отзывы в JSON файл'),
+            onTap: () {},
+          ),
+          ListTile(
+            leading: const Icon(Icons.restore_sharp),
+            title: const Text('Загрузить последний бэкап'),
+            subtitle: const Text('Восстановить отзывы из файла'),
+            onTap: () {},
+          ),
+          const Divider(),
+          ListTile(
             leading: const Icon(Icons.download),
             title: const Text('Экспортировать базу'),
             subtitle: const Text('Сохранить все отзывы в JSON файл'),
