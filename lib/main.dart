@@ -796,6 +796,12 @@ class _ImageSearchScreenState extends State<ImageSearchScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onWebResourceError: (error) {
+            if (error.errorCode == -1 ||
+                error.description.contains('ERR_CACHE_MISS')) {
+              _controller.reload();
+            }
+          },
           onPageFinished: (url) {
             setState(() => _isLoading = false);
             _controller.runJavaScript('''
