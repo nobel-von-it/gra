@@ -515,6 +515,74 @@ class BackupService {
   }
 }
 
+class ImageService {
+  static Future<String> _getPostersPath() async {
+    final directory = await getApplicationDocumentsDirectory();
+    final path = p.join(directory.path, 'posters');
+    final dir = Directory(path);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return path;
+  }
+
+  static Future<void> deletePoster(String? fileName) async {
+    if (fileName == null || fileName.isEmpty) return;
+    try {
+      final path = await _getPostersPath();
+      final file = File(p.join(path, fileName));
+      if (await file.exists()) await file.delete();
+    } catch (e) {
+      debugPrint("Ошибка удаления файла: $e");
+    }
+  }
+
+  // Копирование выбранного файла в папку приложения
+  static Future<String?> saveLocalImage(String filePath) async {
+    try {
+      final postersDir = await _getPostersPath();
+      final extension = p.extension(filePath);
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}$extension';
+      final newPath = p.join(postersDir, fileName);
+
+      await File(filePath).copy(newPath);
+      return fileName; // Возвращаем только имя файла
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Скачивание по URL
+  static Future<String?> downloadImage(String url) async {
+    try {
+      final postersDir = await _getPostersPath();
+      final response = await HttpClient()
+          .getUrl(Uri.parse(url))
+          .then((req) => req.close());
+      if (response.statusCode != 200) return null;
+
+      final bytes = await response.fold<List<int>>([], (p, e) => p..addAll(e));
+      String extension = p.extension(Uri.parse(url).path);
+      if (extension.isEmpty) extension = '.jpg';
+      final fileName = 'url_${DateTime.now().millisecondsSinceEpoch}$extension';
+      final file = File(p.join(postersDir, fileName));
+
+      await file.writeAsBytes(bytes);
+      return fileName;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<File?> getImageFile(String? fileName) async {
+    if (fileName == null || fileName.isEmpty) return null;
+    final postersDir = await _getPostersPath();
+    final file = File(p.join(postersDir, fileName));
+    if (await file.exists()) return file;
+    return null;
+  }
+}
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -935,9 +1003,13 @@ class _MainScreenState extends State<MainScreen> {
             child: const Text('Отмена'),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
+              final item = gamesBox.getAt(index);
+              if (item['poster'] != null) {
+                await ImageService.deletePoster(item['poster']);
+              }
               gamesBox.deleteAt(index);
-              Navigator.pop(ctx);
+              if (ctx.mounted) Navigator.pop(ctx);
             },
             child: const Text('Удалить', style: TextStyle(color: Colors.red)),
           ),
@@ -1040,6 +1112,7 @@ class _MainScreenState extends State<MainScreen> {
         final realIndex = all.indexOf(items[index]);
         final ReviewType type = getReviewType(item['type']);
         return Card(
+          margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
             onTap: () => Navigator.push(
               context,
@@ -1050,7 +1123,42 @@ class _MainScreenState extends State<MainScreen> {
             ),
             onLongPress: () =>
                 _showContextMenu(context, realIndex, item['title']),
-            leading: Icon(type.icon, color: Colors.cyan),
+            leading: SizedBox(
+              width: 50,
+              height: 70,
+              child: FutureBuilder(
+                future: ImageService.getImageFile(item['poster']),
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey[800],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    );
+                  }
+
+                  if (snap.hasData && snap.data != null) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image.file(
+                        snap.data!,
+                        fit: BoxFit.cover,
+                        cacheWidth: 100,
+                      ),
+                    );
+                  }
+                  // Если картинки нет — показываем иконку типа
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.cyan.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Icon(type.icon, color: Colors.cyan, size: 28),
+                  );
+                },
+              ),
+            ),
             title: Text(item['title']),
             subtitle: item[type.dataKey] == ''
                 ? Text(type.name)
@@ -1092,8 +1200,28 @@ class _MainScreenState extends State<MainScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(type.icon, size: 40, color: Colors.cyan),
-                const Spacer(),
+                Expanded(
+                  child: FutureBuilder<File?>(
+                    future: ImageService.getImageFile(item['poster']),
+                    builder: (context, snap) {
+                      if (snap.data != null) {
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            snap.data!,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
+                        );
+                      }
+                      return Center(
+                        child: Icon(type.icon, size: 40, color: Colors.cyan),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+
                 Text(
                   item['title'],
                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1313,63 +1441,180 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   Widget _buildInfoCard(String typeStr) {
     final ReviewType type = getReviewType(typeStr);
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ['Like', 'Neutral', 'Dislike']
-                  .map(
-                    (s) => IconButton(
-                      icon: Icon(
-                        s == 'Like'
-                            ? Icons.thumb_up
-                            : (s == 'Dislike'
-                                  ? Icons.thumb_down
-                                  : Icons.sentiment_neutral),
-                      ),
-                      color: data['status'] == s ? Colors.cyan : Colors.grey,
-                      onPressed: () => setState(() {
-                        data['status'] = s;
-                        _save();
-                      }),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          GestureDetector(
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                builder: (c) => Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.image),
+                      title: const Text('Выбрать файл'),
+                      onTap: () {
+                        Navigator.pop(c);
+                        _pickPoster();
+                      },
                     ),
-                  )
-                  .toList(),
-            ),
-            TextField(
-              controller: _mainValController,
-              decoration: InputDecoration(
-                labelText: type.unitString,
-                prefixIcon: Icon(type.unitIcon),
-              ),
-              onChanged: (v) {
-                data[type.dataKey] = v;
-                _save();
+                    ListTile(
+                      leading: const Icon(Icons.link),
+                      title: const Text('Вставить ссылку'),
+                      onTap: () {
+                        Navigator.pop(c);
+                        _showUrlDialog();
+                      },
+                    ),
+                    if (data['poster'] != null)
+                      ListTile(
+                        leading: const Icon(Icons.delete, color: Colors.red),
+                        title: const Text('Удалить постер'),
+                        onTap: () {
+                          setState(() => data['poster'] = null);
+                          _save();
+                          Navigator.pop(c);
+                        },
+                      ),
+                  ],
+                ),
+              );
+            },
+            child: FutureBuilder<File?>(
+              future: ImageService.getImageFile(data['poster']),
+              builder: (context, snapshot) {
+                if (snapshot.data != null) {
+                  return Image.file(
+                    snapshot.data!,
+                    height: 250,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  );
+                }
+                return Container(
+                  height: 150,
+                  width: double.infinity,
+                  color: Colors.grey[850],
+                  child: const Icon(
+                    Icons.add_a_photo,
+                    size: 50,
+                    color: Colors.white24,
+                  ),
+                );
               },
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
               children: [
-                ...List<String>.from(data['genres']).map(
-                  (g) => InputChip(
-                    label: Text(g),
-                    onDeleted: () {
-                      setState(() => data['genres'].remove(g));
-                      _save();
-                    },
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: ['Like', 'Neutral', 'Dislike']
+                      .map(
+                        (s) => IconButton(
+                          icon: Icon(
+                            s == 'Like'
+                                ? Icons.thumb_up
+                                : (s == 'Dislike'
+                                      ? Icons.thumb_down
+                                      : Icons.sentiment_neutral),
+                          ),
+                          color: data['status'] == s
+                              ? Colors.cyan
+                              : Colors.grey,
+                          onPressed: () => setState(() {
+                            data['status'] = s;
+                            _save();
+                          }),
+                        ),
+                      )
+                      .toList(),
                 ),
-                ActionChip(
-                  label: const Text('+ Жанр'),
-                  onPressed: _showGenrePicker,
+                TextField(
+                  controller: _mainValController,
+                  decoration: InputDecoration(
+                    labelText: type.unitString,
+                    prefixIcon: Icon(type.unitIcon),
+                  ),
+                  onChanged: (v) {
+                    data[type.dataKey] = v;
+                    _save();
+                  },
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    ...List<String>.from(data['genres']).map(
+                      (g) => InputChip(
+                        label: Text(g),
+                        onDeleted: () {
+                          setState(() => data['genres'].remove(g));
+                          _save();
+                        },
+                      ),
+                    ),
+                    ActionChip(
+                      label: const Text('+ Жанр'),
+                      onPressed: _showGenrePicker,
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _pickPoster() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+    );
+    if (result != null && result.files.single.path != null) {
+      String? fileName = await ImageService.saveLocalImage(
+        result.files.single.path!,
+      );
+      if (fileName != null) {
+        setState(() => data['poster'] = fileName);
+        _save();
+      }
+    }
+  }
+
+  void _showUrlDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ссылка на постер'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: 'https://...'),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () async {
+              String? fileName = await ImageService.downloadImage(
+                controller.text,
+              );
+              if (fileName != null) {
+                setState(() => data['poster'] = fileName);
+                _save();
+              }
+              if (!ctx.mounted) return;
+              Navigator.pop(ctx);
+            },
+            child: const Text('Ок'),
+          ),
+        ],
       ),
     );
   }
