@@ -660,6 +660,48 @@ class ImageService {
     }
   }
 
+  static Future<int> deleteUnusedPosters() async {
+    final path = await _getPostersPath();
+    final dir = Directory(path);
+    if (!await dir.exists()) return 0;
+
+    final box = Hive.box(boxGames);
+    final Set<String> usedPosters = box.values
+        .map((item) => item['poster']?.toString())
+        .where((p) => p != null && p.isNotEmpty)
+        .cast<String>()
+        .toSet();
+
+    int deletedCount = 0;
+    final List<FileSystemEntity> files = dir.listSync();
+    for (var file in files) {
+      if (file is File) {
+        final String fileName = p.basename(file.path);
+        if (!usedPosters.contains(fileName)) {
+          await file.delete();
+          deletedCount++;
+        }
+      }
+    }
+    return deletedCount;
+  }
+
+  static Future<int> deleteAllPosters() async {
+    final path = await _getPostersPath();
+    final dir = Directory(path);
+    if (!await dir.exists()) return 0;
+
+    int deletedCount = 0;
+    final List<FileSystemEntity> files = dir.listSync();
+    for (var file in files) {
+      if (file is File) {
+        await file.delete();
+        deletedCount++;
+      }
+    }
+    return deletedCount;
+  }
+
   // Копирование выбранного файла в папку приложения
   static Future<String?> saveLocalImage(String filePath) async {
     try {
@@ -827,7 +869,88 @@ class SettingsScreen extends StatelessWidget {
               MaterialPageRoute(builder: (c) => const BackupSettingsScreen()),
             ),
           ),
+          ListTile(
+            leading: const Icon(Icons.storage),
+            title: const Text('Данные и память'),
+            subtitle: const Text('Очистка постеров и кэша'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (c) => const DataManagementScreen()),
+            ),
+          ),
           const Divider(),
+        ],
+      ),
+    );
+  }
+}
+
+class DataManagementScreen extends StatelessWidget {
+  const DataManagementScreen({super.key});
+
+  void _showResult(BuildContext context, String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Управление данными')),
+      body: ListView(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.cleaning_services),
+            title: const Text('Удалить неиспользуемые постеры'),
+            subtitle: const Text(
+              'Удалит картинки, которые не привязаны ни к одному отзыву',
+            ),
+            onTap: () async {
+              int count = await ImageService.deleteUnusedPosters();
+              if (context.mounted)
+                _showResult(context, 'Удалено файлов: $count');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_forever),
+            title: const Text('Удалить ВСЕ постеры'),
+            subtitle: const Text(
+              'Очистит всю папку с изображениями. Отзывы останутся.',
+            ),
+            onTap: () => _confirmAllDelete(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmAllDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Вы уверены?'),
+        content: const Text(
+          'Это удалит абсолютно все загруженные изображения без возможности восстановления.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              int count = await ImageService.deleteAllPosters();
+              if (context.mounted)
+                _showResult(context, 'Папка очищена. Удалено: $count');
+            },
+            child: const Text(
+              'Удалить всё',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
         ],
       ),
     );
