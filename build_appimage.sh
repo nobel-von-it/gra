@@ -28,7 +28,7 @@ cat > "$APPDIR/${PROJECT_NAME}.desktop" <<'EOF'
 Type=Application
 Name=Gra
 Exec=gra
-Icon=gra
+Icon=Gra
 Categories=Utility;
 EOF
 
