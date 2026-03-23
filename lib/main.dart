@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:webview_flutter/webview_flutter.dart';
 
 // --- КОНСТАНТЫ ---
 const String boxGames = 'games_box';
@@ -556,20 +557,44 @@ class ImageService {
   static Future<String?> downloadImage(String url) async {
     try {
       final postersDir = await _getPostersPath();
-      final response = await HttpClient()
-          .getUrl(Uri.parse(url))
-          .then((req) => req.close());
-      if (response.statusCode != 200) return null;
+      final String fileName;
+      final List<int> bytes;
 
-      final bytes = await response.fold<List<int>>([], (p, e) => p..addAll(e));
-      String extension = p.extension(Uri.parse(url).path);
-      if (extension.isEmpty) extension = '.jpg';
-      final fileName = 'url_${DateTime.now().millisecondsSinceEpoch}$extension';
+      if (url.startsWith('data:image')) {
+        // data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...
+        final String base64Data = url.split(',').last;
+        bytes = base64Decode(base64Data);
+
+        // Определяем расширение
+        String extension = '.jpg';
+        if (url.contains('image/png')) extension = '.png';
+        if (url.contains('image/gif')) extension = '.gif';
+        if (url.contains('image/webp')) extension = '.webp';
+
+        fileName = 'base64_${DateTime.now().millisecondsSinceEpoch}$extension';
+      } else {
+        // --- ОБРАБОТКА ОБЫЧНОГО URL ---
+        final response = await HttpClient()
+            .getUrl(Uri.parse(url))
+            .then((req) => req.close());
+
+        if (response.statusCode != 200) return null;
+
+        bytes = await response.fold<List<int>>([], (p, e) => p..addAll(e));
+
+        String extension = p.extension(Uri.parse(url).path);
+        if (extension.isEmpty) extension = '.jpg';
+
+        fileName = 'url_${DateTime.now().millisecondsSinceEpoch}$extension';
+      }
+
+      // Сохраняем полученные байты в файл
       final file = File(p.join(postersDir, fileName));
-
       await file.writeAsBytes(bytes);
+
       return fileName;
     } catch (e) {
+      debugPrint("Ошибка в downloadImage: $e");
       return null;
     }
   }
@@ -580,6 +605,84 @@ class ImageService {
     final file = File(p.join(postersDir, fileName));
     if (await file.exists()) return file;
     return null;
+  }
+}
+
+class ImageSearchScreen extends StatefulWidget {
+  final String searchQuery;
+  const ImageSearchScreen({super.key, required this.searchQuery});
+
+  @override
+  State<ImageSearchScreen> createState() => _ImageSearchScreenState();
+}
+
+class _ImageSearchScreenState extends State<ImageSearchScreen> {
+  late final WebViewController _controller;
+  bool _isLoading = true;
+  bool _isPopped = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final encodedQuery = Uri.encodeComponent('${widget.searchQuery} постер');
+    final url = 'https://www.google.com/search?q=$encodedQuery&tbm=isch';
+
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (url) {
+            setState(() => _isLoading = false);
+            _controller.runJavaScript('''
+            document.addEventListener('click', function(e) {
+              var target = e.target.closest('img');
+              if (target && target.src) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                target.style.opacity = "0.5";
+                window.FlutterImagePicker.postMessage(target.src);
+              }
+            }, true);
+          ''');
+          },
+        ),
+      )
+      ..addJavaScriptChannel(
+        'FlutterImagePicker',
+        onMessageReceived: (JavaScriptMessage message) {
+          if (_isPopped) return;
+
+          debugPrint("WEBVIEW_LOG: Ссылка получена, закрываем поиск...");
+          final imageUrl = message.message;
+
+          if (imageUrl.isNotEmpty) {
+            _isPopped = true;
+            Navigator.pop(context, imageUrl);
+          }
+        },
+      )
+      ..loadRequest(Uri.parse(url));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Нажми на картинку'),
+        actions: [
+          if (_isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+        ],
+      ),
+      body: WebViewWidget(controller: _controller),
+    );
   }
 }
 
@@ -1451,6 +1554,15 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                 builder: (c) => Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (Platform.isAndroid)
+                      ListTile(
+                        leading: const Icon(Icons.search),
+                        title: const Text('Найти в интернете (WebView)'),
+                        onTap: () {
+                          Navigator.pop(c);
+                          _searchPosterInWeb();
+                        },
+                      ),
                     ListTile(
                       leading: const Icon(Icons.image),
                       title: const Text('Выбрать файл'),
@@ -1617,6 +1729,55 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
         ],
       ),
     );
+  }
+
+  void _searchPosterInWeb() async {
+    try {
+      final String? resultUrl = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ImageSearchScreen(searchQuery: data['title']),
+        ),
+      );
+
+      if (resultUrl == null) return;
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(child: CircularProgressIndicator()),
+      );
+
+      String? fileName = await ImageService.downloadImage(resultUrl);
+
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+
+      if (fileName != null) {
+        setState(() => data['poster'] = fileName);
+        _save();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Постер обновлен!")));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Не удалось сохранить изображение")),
+        );
+      }
+    } catch (e) {
+      debugPrint("UI_ERROR: $e");
+      if (mounted) {
+        try {
+          Navigator.of(context, rootNavigator: true).pop();
+        } catch (_) {}
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Ошибка: $e")));
+      }
+    }
   }
 
   void _showGenrePicker() {
